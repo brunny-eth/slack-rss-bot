@@ -14,43 +14,6 @@ import logging
 
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
-def get_or_create_thread_ts():
-    today = datetime.now().strftime('%Y-%m-%d')
-    
-    if os.path.exists(THREAD_TS_FILE):
-        with open(THREAD_TS_FILE, 'r') as f:
-            data = json.load(f)
-            if data['date'] == today:
-                logging.info(f"Using existing thread for {today}: {data['thread_ts']}")
-                return data['thread_ts']
-    
-    logging.info(f"Creating new thread for {today}")
-    thread_ts = create_daily_thread()
-    if thread_ts:
-        with open(THREAD_TS_FILE, 'w') as f:
-            json.dump({'date': today, 'thread_ts': thread_ts}, f)
-        logging.info(f"New thread created with ts: {thread_ts}")
-    else:
-        logging.error("Failed to create new thread")
-    return thread_ts
-
-def post_to_thread(thread_ts, text):
-    """Post a message to the specified thread."""
-    try:
-        result = client.chat_postMessage(
-            channel=CHANNEL_ID,
-            thread_ts=thread_ts,
-            text=text
-        )
-        logging.info(f"Full Slack API response: {result}")
-        logging.info(f"Message posted successfully: {result['ts']}")
-    except SlackApiError as e:
-        logging.error(f"Error posting to thread: {e}")
-        if e.response['error'] == 'invalid_auth':
-            logging.error("Invalid authentication. Please check your Slack token.")
-        elif e.response['error'] == 'channel_not_found':
-            logging.error(f"Channel not found. Please check your CHANNEL_ID: {CHANNEL_ID}")
-
 # Load environment variables
 load_dotenv()
 
@@ -69,7 +32,6 @@ THREAD_TS_FILE = 'thread_timestamp.json'
 POSTED_ENTRIES_FILE = os.path.join(os.path.dirname(__file__), 'posted_entries.json')
 
 
-
 def fetch_feed(url):
     try:
         response = requests.get(url, verify=certifi.where())
@@ -79,7 +41,7 @@ def fetch_feed(url):
         print(f"Error fetching feed {url}: {e}")
         return None
 
-# def test_feeds():
+def test_feeds():
     for feed_url in RSS_FEEDS:
         print(f"Testing feed: {feed_url}")
         feed = fetch_feed(feed_url)
@@ -103,16 +65,26 @@ def get_or_create_thread_ts():
         with open(THREAD_TS_FILE, 'r') as f:
             data = json.load(f)
             if data['date'] == today:
-                print(f"Using existing thread for {today}")
+                logging.info(f"Using existing thread for {today}")
                 return data['thread_ts']
     
     # If file doesn't exist or it's a new day, create a new thread
-    print(f"Creating new thread for {today}")
+    logging.info(f"Creating new thread for {today}")
     thread_ts = create_daily_thread()
     if thread_ts:
         with open(THREAD_TS_FILE, 'w') as f:
             json.dump({'date': today, 'thread_ts': thread_ts}, f)
-    return thread_ts
+        return thread_ts
+    else:
+        logging.error("Failed to create new thread")
+        return None
+
+def clear_old_entries():
+    if os.path.exists(THREAD_TS_FILE):
+        os.remove(THREAD_TS_FILE)
+    if os.path.exists(POSTED_ENTRIES_FILE):
+        os.remove(POSTED_ENTRIES_FILE)
+    logging.info("Cleared old thread and entry data")
 
 def create_daily_thread():
     """Create a new thread for today's updates."""
@@ -121,9 +93,13 @@ def create_daily_thread():
             channel=CHANNEL_ID,
             text=f"RSS Updates for {datetime.now().strftime('%Y-%m-%d')}"
         )
-        return result["ts"]
+        thread_ts = result['ts']
+        logging.info(f"Daily thread created with timestamp: {thread_ts}")
+        logging.info(f"Full API response for thread creation: {result}")
+        return thread_ts
     except SlackApiError as e:
-        print(f"Error creating thread: {e}")
+        logging.error(f"Error creating thread: {e}")
+        logging.error(f"Error details: {e.response}")
         return None
 
 def post_to_thread(thread_ts, text):
@@ -134,13 +110,13 @@ def post_to_thread(thread_ts, text):
             thread_ts=thread_ts,
             text=text
         )
-        print(f"Message posted successfully: {result['ts']}")
+        logging.info(f"Message posted successfully to thread {thread_ts}: {result['ts']}")
     except SlackApiError as e:
-        print(f"Error posting to thread: {e}")
+        logging.error(f"Error posting to thread: {e}")
         if e.response['error'] == 'invalid_auth':
-            print("Invalid authentication. Please check your Slack token.")
+            logging.error("Invalid authentication. Please check your Slack token.")
         elif e.response['error'] == 'channel_not_found':
-            print(f"Channel not found. Please check your CHANNEL_ID: {CHANNEL_ID}")
+            logging.error(f"Channel not found. Please check your CHANNEL_ID: {CHANNEL_ID}")
 
 def hash_url(url):
     return hashlib.sha256(url.encode()).hexdigest()
@@ -161,7 +137,7 @@ def check_feeds(thread_ts):
     current_time = datetime.now()
 
     for feed_url in RSS_FEEDS:
-        print(f"Checking feed: {feed_url}")
+        logging.info(f"Checking feed: {feed_url}")
         feed = fetch_feed(feed_url)
         if feed is None:
             continue
@@ -184,10 +160,10 @@ def check_feeds(thread_ts):
         # Post new entries (up to 7)
         for entry in new_entries[:7]:
             message = f"New post from {feed.feed.title}: {entry.title}\n{entry.link}"
-            print(f"Posting: {message[:50]}...")  # Print first 50 chars of the message
+            logging.info(f"Posting: {message[:50]}...")  # Log first 50 chars of the message
             post_to_thread(thread_ts, message)
 
-      # Save all new entries before pruning
+    # Save all new entries before pruning
     save_posted_entries(posted_entries)
 
     # Remove older entries to manage file size
@@ -198,19 +174,24 @@ def check_feeds(thread_ts):
     save_posted_entries(posted_entries)
 
 def main():
-    logging.info("Starting RSS Bot...")
+    logging.info("Starting RSS Bot (Hack Test Mode)...")
     
     while True:
+        current_date = datetime.now().date()
+        logging.info(f"Starting check for {current_date}")
+
         thread_ts = get_or_create_thread_ts()
-        if not thread_ts:
-            print("Failed to create or get thread. Retrying in 1 minute.")
-            time.sleep(60)  # Waits 1 minute before retrying to create the thread
+        
+        if thread_ts:
+            check_feeds(thread_ts)
+        else:
+            logging.error("Failed to get or create thread. Will retry in 10 seconds.")
+            time.sleep(10)  # Sleep for 10 seconds before retrying
             continue
 
-        print("Checking RSS feeds...")
-        check_feeds(thread_ts)
-        print("Waiting for next check...")
-        time.sleep(3600)   # Checks every hour for new posts
+        # We'll sleep for 1 hour instead of calculating the time to the next day
+        logging.info("Check complete. Sleeping for 1 hour before next check.")
+        time.sleep(10)  # Sleep for 1 hour before the next check
 
 if __name__ == "__main__":
     main()
