@@ -151,14 +151,14 @@ def check_feeds(thread_ts):
             entry_hash = hash_url(entry_url)
             entry_date = datetime(*entry.published_parsed[:6]) if 'published_parsed' in entry else current_time
             
-            if entry_hash not in posted_entries[feed_url] and current_time - entry_date <= timedelta(hours=24):
+            if entry_hash not in posted_entries[feed_url] and current_time - entry_date <= timedelta(hours=72):
                 new_entries.append(entry)
                 posted_entries[feed_url].append(entry_hash)
 
         logging.info(f"Found {len(new_entries)} new entries for {feed_url}")
         
-        # Post new entries (up to 15)
-        for entry in new_entries[:15]:
+        # Post new entries (up to 30)
+        for entry in new_entries[:30]:
             message = f"New post from {feed.feed.title}: {entry.title}\n{entry.link}"
             logging.info(f"Posting: {message[:50]}...")  # Log first 50 chars of the message
             post_to_thread(thread_ts, message)
@@ -168,7 +168,7 @@ def check_feeds(thread_ts):
 
     # Remove older entries to manage file size
     for feed_url in posted_entries:
-        posted_entries[feed_url] = posted_entries[feed_url][-100:]  # Keep last 100 entries
+        posted_entries[feed_url] = posted_entries[feed_url][-200:]  # Keep last 200 entries
 
     # Save again after pruning
     save_posted_entries(posted_entries)
