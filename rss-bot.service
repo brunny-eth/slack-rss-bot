@@ -1,0 +1,17 @@
+[Unit]
+Description=RSS Bot Service
+After=network.target
+
+[Service]
+Type=simple
+User=bruno
+WorkingDirectory=/home/bruno/slack-rss-bot
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/bruno/slack-rss-bot/venv/bin/python /home/bruno/slack-rss-bot/rss_bot.py
+Restart=always
+RestartSec=10
+StandardOutput=append:/var/log/rss-bot.log
+StandardError=append:/var/log/rss-bot.error.log
+
+[Install]
+WantedBy=multi-user.target
